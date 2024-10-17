@@ -83,7 +83,9 @@ async def create_resource(request: web.Request) -> web.Response:
         priority=True,
     )
 
-    return web.json_response(ResourceDocumentSchema().dump(dict(document)), status=201)
+    return web.json_response(
+        text=json.dumps(document, default=str), content_type="application/json"
+    )
 
 
 async def update_resource(request: web.Request) -> web.Response:
@@ -108,7 +110,9 @@ async def update_resource(request: web.Request) -> web.Response:
 
     await Resource.update_or_insert(dataset_id, resource_id, document.url)
 
-    return web.json_response(ResourceDocumentSchema().dump(document), status=200)
+    return web.json_response(
+        text=json.dumps(document, default=str), status=200, content_type="application/json"
+    )
 
 
 async def delete_resource(request: web.Request) -> web.Response:
