@@ -27,4 +27,5 @@ class ResourceDocumentSchema(BaseModel):
 class ResourceSchema(BaseModel):
     dataset_id: str
     resource_id: UUID
+    status = str = None
     document: Optional[ResourceDocumentSchema] = None

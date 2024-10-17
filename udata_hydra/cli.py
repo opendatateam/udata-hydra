@@ -4,17 +4,17 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Optional
 
 import aiohttp
 import asyncpg
+from asyncpg import Record
 from humanfriendly import parse_size
 from minicli import cli, run, wrap
 from progressist import ProgressBar
 
 from udata_hydra import config
 from udata_hydra.analysis.csv import analyse_csv, delete_table
-from udata_hydra.crawl import check_url as crawl_check_url
+from udata_hydra.crawl.check_resources import check_resource as crawl_check_resource
 from udata_hydra.db.resource import Resource
 from udata_hydra.logger import setup_logging
 from udata_hydra.migrations import Migrator
@@ -48,7 +48,7 @@ async def connection(db_name: str = "main"):
 
 @cli
 async def load_catalog(
-    url: Optional[str] = None, drop_meta: bool = False, drop_all: bool = False, quiet: bool = False
+    url: str | None = None, drop_meta: bool = False, drop_all: bool = False, quiet: bool = False
 ):
     """Load the catalog into DB from CSV file
 
@@ -97,9 +97,9 @@ async def load_catalog(
                     """
                     INSERT INTO catalog (
                         dataset_id, resource_id, url, harvest_modified_at,
-                        deleted, priority
+                        deleted, priority, status
                     )
-                    VALUES ($1, $2, $3, $4, FALSE, FALSE)
+                    VALUES ($1, $2, $3, $4, FALSE, FALSE, NULL)
                     ON CONFLICT (resource_id) DO UPDATE SET
                         dataset_id = $1,
                         url = $3,
@@ -122,8 +122,8 @@ async def load_catalog(
 
 
 @cli
-async def check_url(url: str, method: str = "get"):
-    """Quickly check an URL"""
+async def crawl_url(url: str, method: str = "get"):
+    """Quickly crawl an URL"""
     log.info(f"Checking url {url}")
     async with aiohttp.ClientSession(timeout=None) as session:
         timeout = aiohttp.ClientTimeout(total=5)
@@ -139,12 +139,12 @@ async def check_url(url: str, method: str = "get"):
 @cli
 async def check_resource(resource_id: str, method: str = "get"):
     """Trigger a complete check for a given resource_id"""
-    resource: dict = await Resource.get(resource_id)
+    resource: asyncpg.Record | None = await Resource.get(resource_id)
     if not resource:
-        log.error("Resource not found in catalog")
+        log.error(f"Resource {resource_id} not found in catalog")
         return
     async with aiohttp.ClientSession(timeout=None) as session:
-        await crawl_check_url(
+        await crawl_check_resource(
             url=resource["url"],
             resource_id=resource_id,
             session=session,
@@ -155,10 +155,11 @@ async def check_resource(resource_id: str, method: str = "get"):
 
 @cli(name="analyse-csv")
 async def analyse_csv_cli(
-    check_id: Optional[int] = None, url: Optional[str] = None, debug_insert: bool = False
+    check_id: str | None = None, url: str | None = None, debug_insert: bool = False
 ):
     """Trigger a csv analysis from a check_id or an url"""
-    await analyse_csv(check_id=check_id, url=url, debug_insert=debug_insert)
+    check_id = int(check_id) if check_id else None
+    await analyse_csv(check_id, url, debug_insert)
 
 
 @cli
@@ -240,7 +241,7 @@ async def drop_dbs(dbs: list = []):
             WHERE schemaname = '{config.DATABASE_SCHEMA}';
         """)
         for table in tables:
-            await conn.execute(f'DROP TABLE "{table["tablename"]}"')
+            await conn.execute(f'DROP TABLE "{table["tablename"]}" CASCADE')
 
 
 @cli
@@ -253,29 +254,31 @@ async def migrate(skip_errors: bool = False, dbs: list[str] = ["main", "csv"]):
 
 
 @cli
-async def purge_checks(limit: int = 2):
-    """Delete past checks for each resource_id, keeping only `limit` number of checks"""
-    q = "SELECT resource_id FROM checks GROUP BY resource_id HAVING count(id) > $1"
+async def purge_checks(retention_days: int = 60, quiet: bool = False) -> None:
+    """Delete outdated checks that are more than `retention_days` days old"""
+    if quiet:
+        log.setLevel(logging.ERROR)
+
     conn = await connection()
-    resources = await conn.fetch(q, limit)
-    for r in resources:
-        resource_id = r["resource_id"]
-        log.debug(f"Deleting outdated checks for resource {resource_id}")
-        q = """DELETE FROM checks WHERE id IN (
-            SELECT id FROM checks WHERE resource_id = $1 ORDER BY created_at DESC OFFSET $2
-        )
-        """
-        await conn.execute(q, resource_id, limit)
+    log.debug(f"Deleting checks that are more than {retention_days} days old...")
+    res: Record = await conn.fetchrow(
+        f"""WITH deleted AS (DELETE FROM checks WHERE created_at < now() - interval '{retention_days} days' RETURNING *) SELECT count(*) FROM deleted"""
+    )
+    deleted: int = res["count"]
+    log.info(f"Deleted {deleted} checks.")
 
 
 @cli
-async def purge_csv_tables():
+async def purge_csv_tables(quiet: bool = False):
     """Delete converted CSV tables for resources url no longer in catalog"""
     # TODO: check if we should use parsing_table from table_index?
     # And are they necessarily in sync?
 
     # Fetch all parsing tables from checks where we don't have any entry on
     # md5(url) in catalog or all entries are marked as deleted.
+    if quiet:
+        log.setLevel(logging.ERROR)
+
     q = """
     SELECT DISTINCT checks.parsing_table
     FROM checks

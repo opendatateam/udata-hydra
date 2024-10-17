@@ -26,7 +26,8 @@ async def test_parquet_conversion(
 ):
     filename, expected_count = file_and_count
     file_path = f"tests/data/{filename}"
-    inspection: dict = await perform_csv_inspection(file_path)
+    inspection: dict | None = await perform_csv_inspection(file_path)
+    assert inspection
     columns = inspection["columns"]
     columns = {
         f"{c}__hydra_renamed" if c.lower() in RESERVED_COLS else c: v["python_type"]
@@ -35,8 +36,7 @@ async def test_parquet_conversion(
     _, table = save_as_parquet(
         records=generate_records(file_path, inspection, columns),
         columns=columns,
-        output_name=None,
-        save_output=False,
+        output_filename=None,
     )
     assert len(table) == expected_count
     fake_file = BytesIO()

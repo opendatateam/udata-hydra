@@ -43,7 +43,7 @@ Install udata-hydra dependencies and cli.
 
 `poetry run udata-hydra-crawl`
 
-It will crawl (forever) the catalog according to config set in `udata_hydra/config.toml`, with a default config in `udata_hydra/config_default.toml`.
+It will crawl (forever) the catalog according to the config set in `config.toml`, with a default config in `udata_hydra/config_default.toml`.
 
 `BATCH_SIZE` URLs are queued at each loop run.
 
@@ -114,24 +114,32 @@ poetry run adev runserver udata_hydra/app.py
 The API serves the following endpoints:
 
 *Related to checks:*
-- `GET` on `/api/checks/latest/?url={url}&resource_id={resource_id}` to get the latest check for a given URL and/or `resource_id`
-- `GET` on `/api/checks/all/?url={url}&resource_id={resource_id}` to get all checks for a given URL and/or `resource_id`
+- `GET` on `/api/checks/latest?url={url}&resource_id={resource_id}` to get the latest check for a given URL and/or `resource_id`
+- `GET` on `/api/checks/all?url={url}&resource_id={resource_id}` to get all checks for a given URL and/or `resource_id`
+- `GET` on `/api/checks/aggregate?group_by={column}&created_at={date}` to get checks occurences grouped by a `column` for a specific `date`
 
 *Related to resources:*
-- `GET` on `/api/resources/?resource_id={resource_id}` to get a resource in the DB "catalog" table from its `resource_id`
-- `POST` on `/api/resources/` to receive a resource creation event from a source. It will create a new resource in the DB "catalog" table and mark it as priority for next crawling
-- `PUT` on `/api/resources/` to update a resource in the DB "catalog" table
-- `DELETE` on `/api/resources/` to delete a resource in the DB "catalog" table
+- `GET` on `/api/resource/{resource_id}` to get a resource in the DB "catalog" table from its `resource_id`
+- `POST` on `/api/resources` to receive a resource creation event from a source. It will create a new resource in the DB "catalog" table and mark it as priority for next crawling
+- `PUT` on `/api/resources/{resource_id}` to update a resource in the DB "catalog" table
+- `DELETE` on `/api/resources/{resource_id}` to delete a resource in the DB "catalog" table
 
 > :warning: **Warning: the following routes are deprecated and need be removed in the future:**
 > - `POST` on `/api/resource/created` -> use `POST` on `/api/resources/` instead
 > - `POST` on `/api/resource/updated` -> use `PUT` on `/api/resources/` instead
 > - `POST` on `/api/resource/deleted` -> use `DELET`E on `/api/resources/` instead
 
+*Related to resources exceptions:*
+- `GET` on `/api/resources-exceptions` to get the list all resources exceptions
+- `POST` on `/api/resources-exceptions` to create a new resource exception in the DB
+- `PUT` on `/api/resources-exceptions/{resource_id}` to update a resource exception in the DB
+- `DELETE` on `/api/resources-exceptions/{resource_id}` to delete a resource exception from the DB
+
 *Related to some status and health check:*
-- `GET` on `/api/status/crawler/` to get the crawling status
-- `GET` on `/api/status/worker/` to get the worker status
-- `GET` on `/api/stats/` to get the crawling stats
+- `GET` on `/api/status/crawler` to get the crawling status
+- `GET` on `/api/status/worker` to get the worker status
+- `GET` on `/api/stats` to get the crawling stats
+- `GET` on `/api/health` to get the API version number and environment
 
 More details about some enpoints are provided below with examples, but not for all of them:
 
@@ -140,7 +148,7 @@ More details about some enpoints are provided below with examples, but not for a
 Works with `?url={url}` and `?resource_id={resource_id}`.
 
 ```bash
-$ curl -s "http://localhost:8000/api/checks/latest/?url=http://opendata-sig.saintdenis.re/datasets/661e19974bcc48849bbff7c9637c5c28_1.csv" | json_pp
+$ curl -s "http://localhost:8000/api/checks/latest?url=http://opendata-sig.saintdenis.re/datasets/661e19974bcc48849bbff7c9637c5c28_1.csv" | json_pp
 {
    "status" : 200,
    "catalog_id" : 64148,
@@ -177,7 +185,7 @@ $ curl -s "http://localhost:8000/api/checks/latest/?url=http://opendata-sig.sain
 Works with `?url={url}` and `?resource_id={resource_id}`.
 
 ```bash
-$ curl -s "http://localhost:8000/api/checks/all/?url=http://www.drees.sante.gouv.fr/IMG/xls/er864.xls" | json_pp
+$ curl -s "http://localhost:8000/api/checks/all?url=http://www.drees.sante.gouv.fr/IMG/xls/er864.xls" | json_pp
 [
    {
       "domain" : "www.drees.sante.gouv.fr",
@@ -212,10 +220,95 @@ $ curl -s "http://localhost:8000/api/checks/all/?url=http://www.drees.sante.gouv
 ]
 ```
 
+#### Get checks occurences grouped by a column for a specific date
+
+Works with `?group_by={column}` and `?created_at={date}`.
+`date` should be a date in format `YYYY-MM-DD` or the default keyword `today`.
+
+```bash
+$ curl -s "http://localhost:8000/api/checks/aggregate?group_by=domain&created_at=today" | json_pp
+[
+  {
+    "value": "www.geo2france.fr",
+    "count": 4
+  },
+  {
+    "value": "static.data.gouv.fr",
+    "count": 4
+  },
+  {
+    "value": "grandestprod.data4citizen.com",
+    "count": 3
+  },
+  {
+    "value": "www.datasud.fr",
+    "count": 2
+  },
+  {
+    "value": "koumoul.com",
+    "count": 2
+  },
+  {
+    "value": "opendata.aude.fr",
+    "count": 2
+  },
+  {
+    "value": "departement-ain.opendata.arcgis.com",
+    "count": 2
+  },
+  {
+    "value": "opendata.agglo-larochelle.fr",
+    "count": 1
+  }
+]
+```
+
+#### Adding a resource exception
+
+```bash
+$ curl   -X POST http://localhost:8000/api/resources-exceptions \
+         -H 'Authorization: Bearer <myAPIkey>' \
+         -d '{
+            "resource_id": "123e4567-e89b-12d3-a456-426614174000",
+            "table_indexes": {
+                  "siren": "index"
+            },
+            "comment": "This is a comment for the resource exception."
+         }'
+```
+
+...or, if you don't want to add table indexes and a comment:
+```bash
+$ curl  -X POST localhost:8000/api/resources-exceptions \
+        -H 'Authorization: Bearer <myAPIkey>" \
+        -d '{"resource_id": "f868cca6-8da1-4369-a78d-47463f19a9a3"}'
+```
+
+#### Updating a resource exception
+
+```bash
+$ curl   -X PUT http://localhost:8000/api/resources-exceptions/f868cca6-8da1-4369-a78d-47463f19a9a3 \
+         -H "Authorization: Bearer <myAPIkey>" \
+         -d '{
+            "table_indexes": {
+                  "siren": "index",
+                  "code_postal": "index"
+            },
+            "comment": "Updated comment for the resource exception."
+         }'
+```
+
+#### Deleting a resource exception
+
+```bash
+$ curl  -X DELETE http://localhost:8000/api/resources-exceptions/f868cca6-8da1-4369-a78d-47463f19a9a3 \
+        -H "Authorization: Bearer <myAPIkey>"
+```
+
 #### Get crawling status
 
 ```bash
-$ curl -s "http://localhost:8000/api/status/crawler/" | json_pp
+$ curl -s "http://localhost:8000/api/status/crawler" | json_pp
 {
    "fresh_checks_percentage" : 0.4,
    "pending_checks" : 142153,
@@ -228,7 +321,7 @@ $ curl -s "http://localhost:8000/api/status/crawler/" | json_pp
 #### Get worker status
 
 ```bash
-$ curl -s "http://localhost:8000/api/status/worker/" | json_pp
+$ curl -s "http://localhost:8000/api/status/worker" | json_pp
 {
    "queued" : {
       "default" : 0,
@@ -241,7 +334,7 @@ $ curl -s "http://localhost:8000/api/status/worker/" | json_pp
 #### Get crawling stats
 
 ```bash
-$ curl -s "http://localhost:8000/api/stats/" | json_pp
+$ curl -s "http://localhost:8000/api/stats" | json_pp
 {
    "status" : [
       {

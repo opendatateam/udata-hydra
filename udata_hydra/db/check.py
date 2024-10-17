@@ -1,4 +1,6 @@
-from typing import Optional
+from datetime import date
+
+from asyncpg import Record
 
 from udata_hydra import context
 from udata_hydra.db import (
@@ -12,23 +14,37 @@ class Check:
     """Represents a check in the "checks" DB table"""
 
     @classmethod
-    async def get(cls, check_id: int) -> Optional[dict]:
+    async def get_by_id(cls, check_id: int, with_deleted: bool = False) -> Record | None:
         pool = await context.pool()
         async with pool.acquire() as connection:
             q = """
                 SELECT * FROM catalog JOIN checks
                 ON catalog.last_check = checks.id
-                WHERE checks.id = $1;
+                WHERE checks.id = $1
             """
-            record = await connection.fetchrow(q, check_id)
-            if record:
-                return dict(record)
-            return None
+            if not with_deleted:
+                q += " AND catalog.deleted = FALSE"
+            return await connection.fetchrow(q, check_id)
+
+    @classmethod
+    async def get_by_resource_id(
+        cls, resource_id: str, with_deleted: bool = False
+    ) -> Record | None:
+        pool = await context.pool()
+        async with pool.acquire() as connection:
+            q = """
+                SELECT * FROM catalog JOIN checks
+                ON catalog.last_check = checks.id
+                WHERE catalog.resource_id = $1
+            """
+            if not with_deleted:
+                q += " AND catalog.deleted = FALSE"
+            return await connection.fetchrow(q, resource_id)
 
     @classmethod
     async def get_latest(
-        cls, url: Optional[str] = None, resource_id: Optional[str] = None
-    ) -> Optional[dict]:
+        cls, url: str | None = None, resource_id: str | None = None
+    ) -> Record | None:
         column: str = "url" if url else "resource_id"
         pool = await context.pool()
         async with pool.acquire() as connection:
@@ -45,9 +61,7 @@ class Check:
             return None
 
     @classmethod
-    async def get_all(
-        cls, url: Optional[str] = None, resource_id: Optional[str] = None
-    ) -> Optional[list]:
+    async def get_all(cls, url: str | None = None, resource_id: str | None = None) -> list | None:
         column: str = "url" if url else "resource_id"
         pool = await context.pool()
         async with pool.acquire() as connection:
@@ -62,9 +76,23 @@ class Check:
             return await connection.fetch(q, url or resource_id)
 
     @classmethod
-    async def insert(cls, data: dict) -> int:
+    async def get_group_by_for_date(cls, column: str, date: date, page_size: int = 20):
+        pool = await context.pool()
+        async with pool.acquire() as connection:
+            q = f"""
+            SELECT {column} as value, count(*) as count
+            FROM checks
+            WHERE created_at::date = $1
+            GROUP BY {column}
+            ORDER BY count desc
+            LIMIT $2
+            """
+            return await connection.fetch(q, date, page_size)
+
+    @classmethod
+    async def insert(cls, data: dict) -> Record:
         """
-        Insert a new check in DB and return the check id in DB
+        Insert a new check in DB and return the check record in DB
         This use the info from the last check of the same resource
         """
         data = convert_dict_values_to_json(data)
@@ -74,7 +102,7 @@ class Check:
             last_check = await connection.fetchrow(q1, *data.values())
             q2 = """UPDATE catalog SET last_check = $1 WHERE resource_id = $2"""
             await connection.execute(q2, last_check["id"], data["resource_id"])
-        return last_check["id"]
+            return last_check
 
     @classmethod
     async def update(cls, check_id: int, data: dict) -> int:

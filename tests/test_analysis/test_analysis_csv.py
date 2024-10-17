@@ -7,10 +7,9 @@ import pytest
 from asyncpg.exceptions import UndefinedTableError
 from yarl import URL
 
-from udata_hydra import config
+from tests.conftest import RESOURCE_ID, RESOURCE_URL
 from udata_hydra.analysis.csv import analyse_csv, csv_to_db
-
-from .conftest import RESOURCE_ID
+from udata_hydra.db.resource import Resource
 
 pytestmark = pytest.mark.asyncio
 
@@ -23,7 +22,18 @@ async def test_analyse_csv_on_catalog(
     url = check["url"]
     table_name = hashlib.md5(url.encode("utf-8")).hexdigest()
     rmock.get(url, status=200, body=catalog_content)
-    await analyse_csv(check_id=check["id"], debug_insert=debug_insert)
+
+    # Check resource status before analysis
+    resource = await Resource.get(RESOURCE_ID)
+    assert resource["status"] is None
+
+    # Analyse the CSV
+    await analyse_csv(check_id=check["id"])
+
+    # Check resource status after analysis
+    resource = await Resource.get(RESOURCE_ID)
+    assert resource["status"] is None
+
     res = await db.fetchrow("SELECT * FROM checks")
     assert res["parsing_table"] == table_name
     assert res["parsing_error"] is None
@@ -31,7 +41,7 @@ async def test_analyse_csv_on_catalog(
     assert len(rows) == 2
     row = rows[0]
     assert row["id"] == RESOURCE_ID
-    assert row["url"] == "https://example.com/resource-1"
+    assert row["url"] == RESOURCE_URL
     res = await db.fetchrow("SELECT * from tables_index")
     inspection = json.loads(res["csv_detective"])
     assert all(k in inspection["columns"] for k in ["id", "url"])
@@ -51,7 +61,18 @@ async def test_analyse_csv_big_file(setup_catalog, rmock, db, fake_check, produc
     with open(f"tests/data/{filename}", "rb") as f:
         data = f.read()
     rmock.get(url, status=200, body=data)
+
+    # Check resource status before analysis
+    resource = await Resource.get(RESOURCE_ID)
+    assert resource["status"] is None
+
+    # Analyse the CSV
     await analyse_csv(check_id=check["id"])
+
+    # Check resource status after analysis
+    resource = await Resource.get(RESOURCE_ID)
+    assert resource["status"] is None
+
     count = await db.fetchrow(f'SELECT count(*) AS count FROM "{table_name}"')
     assert count["count"] == expected_count
     profile = await db.fetchrow(
@@ -61,35 +82,6 @@ async def test_analyse_csv_big_file(setup_catalog, rmock, db, fake_check, produc
     for attr in ("header", "columns", "formats", "profile"):
         assert profile[attr]
     assert profile["total_lines"] == expected_count
-
-
-async def test_exception_analysis(setup_catalog, rmock, db, fake_check, produce_mock):
-    """
-    Tests that exception resources (files that are too large to be normally processed) are indeed processed.
-    """
-    save_config = config.MAX_FILESIZE_ALLOWED
-    config.override(MAX_FILESIZE_ALLOWED={"csv": 5000})
-    await db.execute(
-        f"UPDATE catalog SET resource_id = '{config.LARGE_RESOURCES_EXCEPTIONS[0]}' WHERE id=1"
-    )
-    check = await fake_check(resource_id=config.LARGE_RESOURCES_EXCEPTIONS[0])
-    filename, expected_count = ("20190618-annuaire-diagnostiqueurs.csv", 45522)
-    url = check["url"]
-    table_name = hashlib.md5(url.encode("utf-8")).hexdigest()
-    with open(f"tests/data/{filename}", "rb") as f:
-        data = f.read()
-    rmock.get(url, status=200, body=data)
-    await analyse_csv(check_id=check["id"])
-    count = await db.fetchrow(f'SELECT count(*) AS count FROM "{table_name}"')
-    assert count["count"] == expected_count
-    profile = await db.fetchrow(
-        "SELECT csv_detective FROM tables_index WHERE resource_id = $1", check["resource_id"]
-    )
-    profile = json.loads(profile["csv_detective"])
-    for attr in ("header", "columns", "formats", "profile"):
-        assert profile[attr]
-    assert profile["total_lines"] == expected_count
-    config.override(MAX_FILESIZE_ALLOWED=save_config)
 
 
 @pytest.mark.parametrize(
@@ -122,7 +114,7 @@ async def test_csv_to_db_simple_type_casting(db, line_expected, clean_db):
             "header": list(columns.keys()),
             "columns": columns,
         }
-        await csv_to_db(fp.name, inspection, "test_table")
+        await csv_to_db(file_path=fp.name, inspection=inspection, table_name="test_table")
     res = list(await db.fetch("SELECT * FROM test_table"))
     assert len(res) == 1
     cols = ["__id", "int", "float", "string", "bool"]
@@ -166,7 +158,8 @@ async def test_csv_to_db_complex_type_casting(db, line_expected, clean_db):
             "header": list(columns.keys()),
             "columns": columns,
         }
-        await csv_to_db(fp.name, inspection, "test_table")
+        # Insert the data
+        await csv_to_db(file_path=fp.name, inspection=inspection, table_name="test_table")
     res = list(await db.fetch("SELECT * FROM test_table"))
     assert len(res) == 1
     cols = ["__id", "json", "date", "datetime"]
@@ -192,7 +185,8 @@ async def test_basic_sql_injection(db, clean_db):
             "header": list(columns.keys()),
             "columns": columns,
         }
-        await csv_to_db(fp.name, inspection, "test_table")
+        # Insert the data
+        await csv_to_db(file_path=fp.name, inspection=inspection, table_name="test_table")
     res = await db.fetchrow("SELECT * FROM test_table")
     assert res[injection] == "test"
 
@@ -213,7 +207,8 @@ async def test_percentage_column(db, clean_db):
             "header": list(columns.keys()),
             "columns": columns,
         }
-        await csv_to_db(fp.name, inspection, "test_table")
+        # Insert the data
+        await csv_to_db(file_path=fp.name, inspection=inspection, table_name="test_table")
     res = await db.fetchrow("SELECT * FROM test_table")
     assert res["% mon pourcent"] == "test"
 
@@ -234,7 +229,8 @@ async def test_reserved_column_name(db, clean_db):
             "header": list(columns.keys()),
             "columns": columns,
         }
-        await csv_to_db(fp.name, inspection, "test_table")
+        # Insert the data
+        await csv_to_db(file_path=fp.name, inspection=inspection, table_name="test_table")
     res = await db.fetchrow("SELECT * FROM test_table")
     assert res["xmin__hydra_renamed"] == "test"
 
@@ -245,7 +241,14 @@ async def test_error_reporting_csv_detective(
     check = await fake_check()
     url = check["url"]
     rmock.get(url, status=200, body="".encode("utf-8"))
+
+    # Analyse the CSV
     await analyse_csv(check_id=check["id"])
+
+    # Check resource status after analysis attempt
+    resource = await Resource.get(RESOURCE_ID)
+    assert resource["status"] is None
+
     res = await db.fetchrow("SELECT * FROM checks")
     assert res["parsing_table"] is None
     assert res["parsing_error"] == "csv_detective:list index out of range"
@@ -259,7 +262,14 @@ async def test_error_reporting_parsing(
     url = check["url"]
     table_name = hashlib.md5(url.encode("utf-8")).hexdigest()
     rmock.get(url, status=200, body="a,b,c\n1,2".encode("utf-8"))
+
+    # Analyse the CSV
     await analyse_csv(check_id=check["id"])
+
+    # Check resource status after analysis attempt
+    resource = await Resource.get(RESOURCE_ID)
+    assert resource["status"] is None
+
     res = await db.fetchrow("SELECT * FROM checks")
     assert res["parsing_table"] is None
     assert (
@@ -284,7 +294,14 @@ async def test_analyse_csv_send_udata_webhook(
     url = check["url"]
     rmock.get(url, status=200, body=catalog_content)
     rmock.put(udata_url, status=200)
+
+    # Analyse the CSV
     await analyse_csv(check_id=check["id"])
+
+    # Check resource status after analysis
+    resource = await Resource.get(RESOURCE_ID)
+    assert resource["status"] is None
+
     webhook = rmock.requests[("PUT", URL(udata_url))][0].kwargs["json"]
     assert webhook.get("analysis:parsing:started_at")
     assert webhook.get("analysis:parsing:finished_at")

@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import logging
 import os
 import uuid
 from datetime import datetime
@@ -16,14 +17,22 @@ import udata_hydra.cli  # noqa - this register the cli cmds
 from udata_hydra import config
 from udata_hydra.app import app_factory
 from udata_hydra.db.check import Check
+from udata_hydra.db.resource import Resource
+from udata_hydra.db.resource_exception import ResourceException
 from udata_hydra.logger import stop_sentry
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5433/postgres")
 RESOURCE_ID = "c4e3a9fb-4415-488e-ba57-d05269b27adf"
+RESOURCE_EXCEPTION_ID = "d4e3a9fb-4415-488e-ba57-d05269b27adf"
+RESOURCE_EXCEPTION_TABLE_INDEXES = {"Nom": "index", "N° de certificat": "index"}
+RESOURCE_URL = "https://example.com/resource-1"
 DATASET_ID = "601ddcfc85a59c3a45c2435a"
+NOT_EXISTING_RESOURCE_ID = "5d0b2b91-b21b-4120-83ef-83f818ba2451"
 pytestmark = pytest.mark.asyncio
 
 nest_asyncio.apply()
+
+log = logging.getLogger("udata-hydra")
 
 
 def dummy(return_value=None):
@@ -133,17 +142,33 @@ def setup_catalog(catalog_content, rmock):
 
 
 @pytest.fixture
+async def setup_catalog_with_resource_exception(setup_catalog):
+    """Setup a catalog with a resource that is too large to be processed
+    Columns for the resource RESOURCE_ID_EXCEPTION:
+    ['__id', 'Nom', 'Prenom', 'Societe', 'Adresse', 'CP', 'Ville', 'Tel1', 'Tel2', 'email', 'Organisme', 'Org Cofrac', 'Type de certificat', 'N° de certificat', 'Date début validité', 'Date fin validité']
+    """
+    await Resource.insert(
+        dataset_id=DATASET_ID, resource_id=RESOURCE_EXCEPTION_ID, url="http://example.com/"
+    )
+    await ResourceException.insert(
+        resource_id=RESOURCE_EXCEPTION_ID,
+        table_indexes=RESOURCE_EXCEPTION_TABLE_INDEXES,
+        comment="This is a test comment.",
+    )
+
+
+@pytest.fixture
 def produce_mock(mocker):
-    mocker.patch("udata_hydra.crawl.send", dummy())
+    mocker.patch("udata_hydra.crawl.process_check_data.send", dummy())
     mocker.patch("udata_hydra.analysis.resource.send", dummy())
     mocker.patch("udata_hydra.analysis.csv.send", dummy())
 
 
 @pytest.fixture
 def analysis_mock(mocker):
-    """Disable process_resource while crawling"""
+    """Disable analyse_resource while crawling"""
     mocker.patch(
-        "udata_hydra.crawl.process_resource",
+        "udata_hydra.crawl.check_resources.analyse_resource",
         dummy({"error": None, "checksum": None, "filesize": None, "mime_type": None}),
     )
 
@@ -164,13 +189,13 @@ async def db():
 
 @pytest_asyncio.fixture
 async def insert_fake_resource():
-    async def _insert_fake_resource(database) -> None:
-        await database.execute(
-            f"""
-            INSERT INTO catalog (dataset_id, resource_id, url, priority, deleted)
-            VALUES ('{DATASET_ID}', '{RESOURCE_ID}', 'http://dev.local/', True, False)
-            ON CONFLICT (resource_id) DO NOTHING;
-            """
+    async def _insert_fake_resource(database, status: str | None = None):
+        await Resource.insert(
+            dataset_id=DATASET_ID,
+            resource_id=RESOURCE_ID,
+            url=RESOURCE_URL,
+            status=status,
+            priority=True,
         )
 
     return _insert_fake_resource
@@ -194,11 +219,12 @@ async def fake_check():
         resource_id=RESOURCE_ID,
         detected_last_modified_at=None,
         parsing_table=False,
+        domain="example.com",
     ) -> dict:
         url = f"https://example.com/resource-{resource}"
         data = {
             "url": url,
-            "domain": "example.com",
+            "domain": domain,
             "status": status,
             "headers": headers,
             "timeout": timeout,
@@ -211,10 +237,10 @@ async def fake_check():
             if parsing_table
             else None,
         }
-        id = await Check.insert(data)
-        data["id"] = id
+        check = await Check.insert(data)
+        data["id"] = check["id"]
         if created_at:
-            await Check.update(id, {"created_at": created_at})
+            await Check.update(check["id"], {"created_at": created_at})
             data["created_at"] = created_at
         return data
 
