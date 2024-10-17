@@ -29,6 +29,7 @@ class CheckSchema(BaseModel):
     def transform(cls, obj: dict) -> dict:
         return json.loads(obj["headers"]) if obj["headers"] else {}
 
+
 class CheckGroupBy(BaseModel):
     value = str
     count = int
