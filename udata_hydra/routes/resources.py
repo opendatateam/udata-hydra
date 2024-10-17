@@ -73,8 +73,8 @@ async def create_resource(request: web.Request) -> web.Response:
     if not document:
         raise web.HTTPBadRequest(text="Missing document body")
 
-    dataset_id = valid_payload.dataset_id
-    resource_id = valid_payload.resource_id
+    dataset_id: str = str(valid_payload.dataset_id)
+    resource_id: str = str(valid_payload.resource_id)
 
     await Resource.insert(
         dataset_id=dataset_id,
@@ -103,7 +103,7 @@ async def update_resource(request: web.Request) -> web.Response:
     if not document:
         raise web.HTTPBadRequest(text="Missing document body")
 
-    dataset_id: str = valid_payload.dataset_id
+    dataset_id: str = str(valid_payload.dataset_id)
     resource_id: str = str(valid_payload.resource_id)
 
     await Resource.update_or_insert(dataset_id, resource_id, document.url)
@@ -118,7 +118,8 @@ async def delete_resource(request: web.Request) -> web.Response:
     except ValidationError as err:
         raise web.HTTPBadRequest(text=err.json())
 
-    resource: Record | None = await Resource.get(resource_id=str(valid_payload.resource_id))
+    resource_id: str = str(valid_payload.resource_id)
+    resource: Record | None = await Resource.get(resource_id=resource_id)
     if not resource:
         raise web.HTTPNotFound()
 
