@@ -1,5 +1,4 @@
 import datetime
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -15,13 +14,13 @@ class ResourceDocumentSchema(BaseModel):
     filetype: str
     type: str
     mime: str | None = None
-    filesize: Optional[int]
+    filesize: int | None = None
     checksum_type: str | None = None
     checksum_value: str | None = None
     created_at: datetime.datetime
     last_modified: datetime.datetime
-    extras: Optional[dict] = None
-    harvest: Optional[dict] = None
+    extras: dict | None = None
+    harvest: dict | None = None
 
 
 class ResourceSchema(BaseModel):
