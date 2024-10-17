@@ -31,5 +31,5 @@ class CheckSchema(BaseModel):
 
 
 class CheckGroupBy(BaseModel):
-    value = str
-    count = int
+    value: str
+    count: int

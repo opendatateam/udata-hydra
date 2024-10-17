@@ -4,10 +4,10 @@ from udata_hydra import config
 
 
 class ResourceExceptionSchema(BaseModel):
-    id = str
-    resource_id = str
-    table_indexes = dict = None
-    comment = str = None
+    id: str
+    resource_id: str
+    table_indexes: dict | None = None
+    comment: str | None = None
 
     @staticmethod
     def are_table_indexes_valid(table_indexes: dict[str, str]) -> tuple[bool, str | None]:

@@ -8,16 +8,16 @@ from pydantic import BaseModel
 class ResourceDocumentSchema(BaseModel):
     id: str
     url: str
-    format: Optional[str] = None
+    format: str | None = None
     title: str
-    schema: Optional[str] = None
-    description: Optional[str] = None
+    schema: str | None = None
+    description: str | None = None
     filetype: str
     type: str
-    mime: Optional[str] = None
+    mime: str | None = None
     filesize: Optional[int]
-    checksum_type: Optional[str] = None
-    checksum_value: Optional[str] = None
+    checksum_type: str | None = None
+    checksum_value: str | None = None
     created_at: datetime.datetime
     last_modified: datetime.datetime
     extras: Optional[dict] = None
@@ -27,5 +27,5 @@ class ResourceDocumentSchema(BaseModel):
 class ResourceSchema(BaseModel):
     dataset_id: str
     resource_id: UUID
-    status = str = None
-    document: Optional[ResourceDocumentSchema] = None
+    status: str | None = None
+    document: ResourceDocumentSchema | None = None
