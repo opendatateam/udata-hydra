@@ -2,7 +2,7 @@ import datetime
 import json
 from typing import Optional
 
-from pydantic import UUID1, BaseModel, Field, field_validator
+from pydantic import UUID4, BaseModel, Field, field_validator
 
 
 class CheckSchema(BaseModel):
@@ -11,13 +11,13 @@ class CheckSchema(BaseModel):
     url: str | None = None
     domain: str | None = None
     created_at: Optional[datetime.datetime]
-    check_status: int = Field(alias="status")
-    headers: dict
+    check_status: int | None = Field(alias="status")
+    headers: dict | None = {}
     timeout: bool | None = None
     response_time: Optional[float]
     error: str | None = None
     dataset_id: str | None = None
-    resource_id: Optional[UUID1] = None
+    resource_id: UUID4 | None = None
     deleted: bool | None = None
     parsing_started_at: Optional[datetime.datetime] = None
     parsing_finished_at: Optional[datetime.datetime] = None
@@ -26,8 +26,10 @@ class CheckSchema(BaseModel):
 
     @field_validator("headers", mode="before")
     @classmethod
-    def transform(cls, obj: dict) -> dict:
-        return json.loads(obj["headers"]) if obj["headers"] else {}
+    def transform(cls, headers: str | None) -> dict:
+        if headers:
+            return json.loads(headers)
+        return {}
 
 
 class CheckGroupBy(BaseModel):

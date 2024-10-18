@@ -17,13 +17,15 @@ from udata_hydra.utils import get_request_params
 async def get_latest_check(request: web.Request) -> web.Response:
     """Get the latest check for a given URL or resource_id"""
     url, resource_id = get_request_params(request, params_names=["url", "resource_id"])
-    check: Record | None = await Check.get_latest(url, resource_id)
-    if not check:
+    record: Record | None = await Check.get_latest(url, resource_id)
+    if not record:
         raise web.HTTPNotFound()
-    if check["deleted"]:
+    if record["deleted"]:
         raise web.HTTPGone()
 
-    return web.Response(text=json.dumps(check, default=str), content_type="application/json")
+    check = CheckSchema.model_validate(record)
+    return web.Response(text="test", content_type="application/json")
+    # return web.Response(text=json.dumps(check, default=str), content_type="application/json")
 
 
 async def get_all_checks(request: web.Request) -> web.Response:
