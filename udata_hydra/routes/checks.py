@@ -24,8 +24,8 @@ async def get_latest_check(request: web.Request) -> web.Response:
         raise web.HTTPGone()
 
     check = CheckSchema.model_validate(record)
-    return web.Response(text="test", content_type="application/json")
-    # return web.Response(text=json.dumps(check, default=str), content_type="application/json")
+
+    return web.json_response(check.model_dump())
 
 
 async def get_all_checks(request: web.Request) -> web.Response:
@@ -33,7 +33,8 @@ async def get_all_checks(request: web.Request) -> web.Response:
     data: list | None = await Check.get_all(url, resource_id)
     if not data:
         raise web.HTTPNotFound()
-    return web.json_response([r for r in data])
+
+    return web.json_response([CheckSchema.model_validate(r) for r in data])
 
 
 async def get_checks_aggregate(request: web.Request) -> web.Response:
@@ -55,7 +56,7 @@ async def get_checks_aggregate(request: web.Request) -> web.Response:
     if not data:
         raise web.HTTPNotFound()
 
-    return web.json_response([r for r in data])
+    return web.json_response([CheckSchema.model_validate(r) for r in data])
 
 
 async def create_check(request: web.Request) -> web.Response:
@@ -87,8 +88,10 @@ async def create_check(request: web.Request) -> web.Response:
         )
         context.monitor().refresh(status)
 
-    check: Record | None = await Check.get_latest(url, resource_id)
-    if not check:
+    record: Record | None = await Check.get_latest(url, resource_id)
+    if not record:
         raise web.HTTPBadRequest(text=f"Check not created, status: {status}")
 
-    return web.Response(text=json.dumps(check, default=str), content_type="application/json")
+    check = CheckSchema.model_validate(record)
+
+    return web.json_response(check.model_dump())

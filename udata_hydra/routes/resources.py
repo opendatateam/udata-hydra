@@ -20,11 +20,13 @@ async def get_resource(request: web.Request) -> web.Response:
     except Exception as e:
         raise web.HTTPBadRequest(text=json.dumps({"error": str(e)}))
 
-    resource: Record | None = await Resource.get(resource_id)
-    if not resource:
+    record: Record | None = await Resource.get(resource_id)
+    if not record:
         raise web.HTTPNotFound()
 
-    return web.Response(text=json.dumps(resource, default=str), content_type="application/json")
+    resource = ResourceSchema.model_validate(record)
+
+    return web.json_response(resource.model_dump())
 
 
 async def get_resource_status(request: web.Request) -> web.Response:
