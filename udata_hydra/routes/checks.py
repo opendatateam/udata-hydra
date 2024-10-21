@@ -34,7 +34,9 @@ async def get_all_checks(request: web.Request) -> web.Response:
     if not records:
         raise web.HTTPNotFound()
 
-    return web.json_response(json.dumps([CheckSchema.model_validate(dict(r)) for r in records]))
+    return web.json_response(
+        json.dumps([CheckSchema.model_validate(dict(r)).model_dump_json() for r in records])
+    )
 
 
 async def get_checks_aggregate(request: web.Request) -> web.Response:
@@ -56,7 +58,9 @@ async def get_checks_aggregate(request: web.Request) -> web.Response:
     if not records:
         raise web.HTTPNotFound()
 
-    return web.json_response([CheckSchema.model_validate(r).model_dump_json() for r in records])
+    return web.json_response(
+        json.dumps([CheckSchema.model_validate(dict(r)).model_dump_json() for r in records])
+    )
 
 
 async def create_check(request: web.Request) -> web.Response:
