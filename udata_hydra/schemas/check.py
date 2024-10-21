@@ -1,26 +1,25 @@
 import datetime
 import json
-from typing import Optional
 
 from pydantic import UUID4, BaseModel, Field, field_validator
 
 
 class CheckSchema(BaseModel):
-    check_id: int = Field(alias="id")
-    catalog_id: Optional[int] = None
+    id: int = Field(alias="check_id")
+    catalog_id: int | None = None
     url: str | None = None
     domain: str | None = None
-    created_at: Optional[datetime.datetime]
-    check_status: int | None = Field(alias="status")
+    created_at: datetime.datetime
+    status: int | None = Field(alias="check_status")
     headers: dict | None = {}
     timeout: bool | None = None
-    response_time: Optional[float]
+    response_time: float | None = None
     error: str | None = None
     dataset_id: str | None = None
     resource_id: UUID4 | None = None
     deleted: bool | None = None
-    parsing_started_at: Optional[datetime.datetime] = None
-    parsing_finished_at: Optional[datetime.datetime] = None
+    parsing_started_at: datetime.datetime | None = None
+    parsing_finished_at: datetime.datetime | None = None
     parsing_error: str | None = None
     parsing_table: str | None = None
     parquet_url: str | None = None

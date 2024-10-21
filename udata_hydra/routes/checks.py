@@ -24,7 +24,7 @@ async def get_latest_check(request: web.Request) -> web.Response:
 
     check = CheckSchema.model_validate(record)
 
-    return web.json_response(check.model_dump())
+    return web.json_response(text=check.model_dump_json())
 
 
 async def get_all_checks(request: web.Request) -> web.Response:
@@ -93,4 +93,4 @@ async def create_check(request: web.Request) -> web.Response:
 
     check = CheckSchema.model_validate(record)
 
-    return web.json_response(check.model_dump())
+    return web.json_response(text=check.model_dump_json())

@@ -62,8 +62,7 @@ async def get_resource_status(request: web.Request) -> web.Response:
 async def create_resource(request: web.Request) -> web.Response:
     """Endpoint to receive a resource creation event from a source
     Will create a new resource in the DB "catalog" table and mark it as priority for next crawling
-    Respond with a 200 status code and a JSON body with a message key set to "created"
-    If error, respond with a 400 status code
+    Respond with a 200 status code with the created resource document
     """
     try:
         payload = await request.json()
@@ -82,14 +81,13 @@ async def create_resource(request: web.Request) -> web.Response:
         priority=True,
     )
 
-    return web.json_response(document.model_dump())
+    return web.json_response(text=document.model_dump_json())
 
 
 async def update_resource(request: web.Request) -> web.Response:
     """Endpoint to receive a resource update event from a source
     Will update an existing resource in the DB "catalog" table and mark it as priority for next crawling
-    Respond with a 200 status code and a JSON body with a message key set to "updated"
-    If error, respond with a 400 status code
+    Respond with a 200 status code with the updated resource document
     """
 
     try:
@@ -104,7 +102,7 @@ async def update_resource(request: web.Request) -> web.Response:
 
     await Resource.update_or_insert(resource.dataset_id, str(resource.resource_id), document.url)
 
-    return web.json_response(document.model_dump())
+    return web.json_response(text=document.model_dump_json())
 
 
 async def delete_resource(request: web.Request) -> web.Response:

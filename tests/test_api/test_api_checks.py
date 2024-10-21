@@ -47,6 +47,7 @@ async def test_get_latest_check(setup_catalog, client, query, fake_check, fake_r
     resp = await client.get(f"/api/checks/latest?{query}")
     assert resp.status == 200
     data: dict = await resp.json()
+
     assert data.pop("created_at")
     assert data.pop("id")
     url = RESOURCE_URL

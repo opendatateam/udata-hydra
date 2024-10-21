@@ -52,7 +52,7 @@ async def create_resource_exception(request: web.Request) -> web.Response:
 
     resource_exception = ResourceExceptionSchema.model_validate(record)
 
-    return web.json_response(resource_exception.model_dump(), status=201)
+    return web.json_response(text=resource_exception.model_dump_json(), status=201)
 
 
 async def update_resource_exception(request: web.Request) -> web.Response:
@@ -87,7 +87,7 @@ async def update_resource_exception(request: web.Request) -> web.Response:
 
     resource_exception = ResourceExceptionSchema.model_validate(record)
 
-    return web.json_response(resource_exception.model_dump())
+    return web.json_response(text=resource_exception.model_dump_json())
 
 
 async def delete_resource_exception(request: web.Request) -> web.Response:
