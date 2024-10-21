@@ -3,7 +3,7 @@ import uuid
 
 from aiohttp import web
 from asyncpg import Record
-from marshmallow import ValidationError
+from pydantic import ValidationError
 
 from udata_hydra.db.resource import Resource
 from udata_hydra.schemas import ResourceDocumentSchema, ResourceSchema
@@ -20,11 +20,13 @@ async def get_resource(request: web.Request) -> web.Response:
     except Exception as e:
         raise web.HTTPBadRequest(text=json.dumps({"error": str(e)}))
 
-    resource: Record | None = await Resource.get(resource_id)
-    if not resource:
+    record: Record | None = await Resource.get(resource_id)
+    if not record:
         raise web.HTTPNotFound()
 
-    return web.json_response(ResourceSchema().dump(dict(resource)))
+    resource = ResourceSchema.model_validate(record)
+
+    return web.json_response(resource.model_dump())
 
 
 async def get_resource_status(request: web.Request) -> web.Response:
@@ -60,68 +62,61 @@ async def get_resource_status(request: web.Request) -> web.Response:
 async def create_resource(request: web.Request) -> web.Response:
     """Endpoint to receive a resource creation event from a source
     Will create a new resource in the DB "catalog" table and mark it as priority for next crawling
-    Respond with a 200 status code and a JSON body with a message key set to "created"
-    If error, respond with a 400 status code
+    Respond with a 200 status code with the created resource document
     """
     try:
         payload = await request.json()
-        valid_payload: dict = ResourceSchema().load(payload)
+        resource = ResourceSchema.model_validate(payload)
+        document = ResourceDocumentSchema.model_validate(resource.document)
     except ValidationError as err:
-        raise web.HTTPBadRequest(text=json.dumps(err.messages))
+        raise web.HTTPBadRequest(text=err.json())
 
-    document: dict | None = valid_payload["document"]
     if not document:
         raise web.HTTPBadRequest(text="Missing document body")
 
-    dataset_id = valid_payload["dataset_id"]
-    resource_id = valid_payload["resource_id"]
-
     await Resource.insert(
-        dataset_id=dataset_id,
-        resource_id=resource_id,
-        url=document["url"],
+        dataset_id=resource.dataset_id,
+        resource_id=str(resource.resource_id),
+        url=document.url,
         priority=True,
     )
 
-    return web.json_response(ResourceDocumentSchema().dump(dict(document)), status=201)
+    return web.json_response(text=document.model_dump_json())
 
 
 async def update_resource(request: web.Request) -> web.Response:
     """Endpoint to receive a resource update event from a source
     Will update an existing resource in the DB "catalog" table and mark it as priority for next crawling
-    Respond with a 200 status code and a JSON body with a message key set to "updated"
-    If error, respond with a 400 status code
+    Respond with a 200 status code with the updated resource document
     """
 
     try:
         payload = await request.json()
-        valid_payload: dict = ResourceSchema().load(payload)
+        resource = ResourceSchema.model_validate(payload)
+        document = ResourceDocumentSchema.model_validate(resource.document)
     except ValidationError as err:
-        raise web.HTTPBadRequest(text=json.dumps(err.messages))
+        raise web.HTTPBadRequest(text=err.json())
 
-    document: dict | None = valid_payload["document"]
     if not document:
         raise web.HTTPBadRequest(text="Missing document body")
 
-    dataset_id: str = valid_payload["dataset_id"]
-    resource_id: str = valid_payload["resource_id"]
+    await Resource.update_or_insert(resource.dataset_id, str(resource.resource_id), document.url)
 
-    await Resource.update_or_insert(dataset_id, resource_id, document["url"])
-
-    return web.json_response(ResourceDocumentSchema().dump(document), status=200)
+    return web.json_response(text=document.model_dump_json())
 
 
 async def delete_resource(request: web.Request) -> web.Response:
     try:
-        resource_id = str(uuid.UUID(request.match_info["resource_id"]))
-    except Exception as e:
-        raise web.HTTPBadRequest(text=json.dumps({"error": str(e)}))
+        payload = await request.json()
+        resource = ResourceSchema.model_validate(payload)
+    except ValidationError as err:
+        raise web.HTTPBadRequest(text=err.json())
 
-    resource: Record | None = await Resource.get(resource_id=resource_id)
-    if not resource:
+    record: Record | None = await Resource.get(resource_id=str(resource.resource_id))
+    if not record:
         raise web.HTTPNotFound()
 
     # Mark resource as deleted in catalog table
-    await Resource.delete(resource_id=resource_id)
+    await Resource.delete(resource_id=str(resource.resource_id))
 
     return web.HTTPNoContent()

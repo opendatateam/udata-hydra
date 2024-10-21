@@ -15,11 +15,9 @@ async def get_all_resources_exceptions(request: web.Request) -> web.Response:
     """Endpoint to get all resource exceptions from the DB
     Respond with a 200 status code with a list of resource exceptions
     """
-    resources_exceptions: list[Record] = await ResourceException.get_all()
+    records: list[Record] | None = await ResourceException.get_all()
 
-    return web.json_response(
-        [ResourceExceptionSchema().dump(dict(r)) for r in resources_exceptions]
-    )
+    return web.json_response([ResourceExceptionSchema.model_validate(r) for r in records])
 
 
 async def create_resource_exception(request: web.Request) -> web.Response:
@@ -42,7 +40,7 @@ async def create_resource_exception(request: web.Request) -> web.Response:
         raise web.HTTPBadRequest(text=json.dumps({"error": str(err)}))
 
     try:
-        resource_exception: Record = await ResourceException.insert(
+        record: Record = await ResourceException.insert(
             resource_id=resource_id,
             table_indexes=table_indexes,
             comment=comment,
@@ -52,7 +50,9 @@ async def create_resource_exception(request: web.Request) -> web.Response:
     except UniqueViolationError:
         raise web.HTTPBadRequest(text="Resource exception already exists")
 
-    return web.json_response(ResourceExceptionSchema().dump(dict(resource_exception)), status=201)
+    resource_exception = ResourceExceptionSchema.model_validate(record)
+
+    return web.json_response(text=resource_exception.model_dump_json(), status=201)
 
 
 async def update_resource_exception(request: web.Request) -> web.Response:
@@ -79,13 +79,15 @@ async def update_resource_exception(request: web.Request) -> web.Response:
     except Exception as e:
         raise web.HTTPBadRequest(text=f"error: {str(e)}")
 
-    resource_exception: Record = await ResourceException.update(
+    record: Record = await ResourceException.update(
         resource_id=resource_id,
         table_indexes=table_indexes,
         comment=comment,
     )
 
-    return web.json_response(ResourceExceptionSchema().dump(dict(resource_exception)))
+    resource_exception = ResourceExceptionSchema.model_validate(record)
+
+    return web.json_response(text=resource_exception.model_dump_json())
 
 
 async def delete_resource_exception(request: web.Request) -> web.Response:
@@ -97,8 +99,8 @@ async def delete_resource_exception(request: web.Request) -> web.Response:
     except Exception as e:
         raise web.HTTPBadRequest(text=f"error: {str(e)}")
 
-    resource: Record | None = await Resource.get(resource_id)
-    if not resource:
+    record: Record | None = await Resource.get(resource_id)
+    if not record:
         raise web.HTTPNotFound()
 
     await ResourceException.delete(resource_id)

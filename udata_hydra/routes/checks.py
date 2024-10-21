@@ -4,7 +4,7 @@ from datetime import date
 import aiohttp
 from aiohttp import web
 from asyncpg import Record
-from marshmallow import ValidationError
+from pydantic import ValidationError
 
 from udata_hydra import config, context
 from udata_hydra.crawl.check_resources import check_resource
@@ -17,22 +17,26 @@ from udata_hydra.utils import get_request_params
 async def get_latest_check(request: web.Request) -> web.Response:
     """Get the latest check for a given URL or resource_id"""
     url, resource_id = get_request_params(request, params_names=["url", "resource_id"])
-    data: Record | None = await Check.get_latest(url, resource_id)
-    if not data:
+    record: Record | None = await Check.get_latest(url, resource_id)
+    if not record:
         raise web.HTTPNotFound()
-    if data["deleted"]:
+    if record["deleted"]:
         raise web.HTTPGone()
 
-    return web.json_response(CheckSchema().dump(dict(data)))
+    check = CheckSchema.model_validate(dict(record))
+
+    return web.json_response(text=check.model_dump_json())
 
 
 async def get_all_checks(request: web.Request) -> web.Response:
     url, resource_id = get_request_params(request, params_names=["url", "resource_id"])
-    data: list | None = await Check.get_all(url, resource_id)
-    if not data:
+    records: list[Record] | None = await Check.get_all(url, resource_id)
+    if not records:
         raise web.HTTPNotFound()
 
-    return web.json_response([CheckSchema().dump(dict(r)) for r in data])
+    return web.json_response(
+        json.dumps([CheckSchema.model_validate(dict(r)).model_dump_json() for r in records])
+    )
 
 
 async def get_checks_aggregate(request: web.Request) -> web.Response:
@@ -50,11 +54,13 @@ async def get_checks_aggregate(request: web.Request) -> web.Response:
     column: str = request.query.get("group_by")
     if not column:
         raise web.HTTPBadRequest(text="Missing mandatory 'group_by' param.")
-    data: list | None = await Check.get_group_by_for_date(column, created_at_date)
-    if not data:
+    records: list[Record] | None = await Check.get_group_by_for_date(column, created_at_date)
+    if not records:
         raise web.HTTPNotFound()
 
-    return web.json_response([CheckGroupBy().dump(dict(r)) for r in data])
+    return web.json_response(
+        json.dumps([CheckSchema.model_validate(dict(r)).model_dump_json() for r in records])
+    )
 
 
 async def create_check(request: web.Request) -> web.Response:
@@ -65,14 +71,14 @@ async def create_check(request: web.Request) -> web.Response:
         payload: dict = await request.json()
         resource_id: str = payload["resource_id"]
     except ValidationError as err:
-        raise web.HTTPBadRequest(text=json.dumps(err.messages))
+        raise web.HTTPBadRequest(text=err.json())
     except KeyError as e:
         raise web.HTTPBadRequest(text=f"Missing key: {str(e)}")
 
     # Get URL from resource_id
     try:
-        resource: Record | None = await Resource.get(resource_id, "url")
-        url: str = resource["url"]
+        record: Record | None = await Resource.get(resource_id, "url")
+        url: str = resource.url
     except Exception:
         raise web.HTTPNotFound(text=f"Couldn't find URL for resource {resource_id}")
 
@@ -86,8 +92,10 @@ async def create_check(request: web.Request) -> web.Response:
         )
         context.monitor().refresh(status)
 
-    check: Record | None = await Check.get_latest(url, resource_id)
-    if not check:
+    record: Record | None = await Check.get_latest(url, resource_id)
+    if not record:
         raise web.HTTPBadRequest(text=f"Check not created, status: {status}")
 
-    return web.json_response(CheckSchema().dump(dict(check)), status=201)
+    check = CheckSchema.model_validate(record)
+
+    return web.json_response(text=check.model_dump_json())

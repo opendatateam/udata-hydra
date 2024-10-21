@@ -2,10 +2,10 @@ import json
 
 from aiohttp import web
 from asyncpg import Record
-from marshmallow import ValidationError
+from pydantic import ValidationError
 
 from udata_hydra.db.resource import Resource
-from udata_hydra.schemas import ResourceSchema
+from udata_hydra.schemas import ResourceDocumentSchema, ResourceSchema
 from udata_hydra.utils import get_request_params
 
 
@@ -15,11 +15,11 @@ async def get_resource_legacy(request: web.Request) -> web.Response:
     If resource is not found, respond with a 404 status code
     """
     [resource_id] = get_request_params(request, params_names=["resource_id"])
-    resource: Record | None = await Resource.get(resource_id)
-    if not resource:
+    record: Record | None = await Resource.get(resource_id)
+    if not record:
         raise web.HTTPNotFound()
 
-    return web.json_response(ResourceSchema().dump(dict(resource)))
+    return web.Response(text=json.dumps(record, default=str), content_type="application/json")
 
 
 async def create_resource_legacy(request: web.Request) -> web.Response:
@@ -30,21 +30,18 @@ async def create_resource_legacy(request: web.Request) -> web.Response:
     """
     try:
         payload = await request.json()
-        valid_payload: dict = ResourceSchema().load(payload)
+        resource = ResourceSchema.model_validate(payload)
+        document = ResourceDocumentSchema.model_validate(resource.document)
     except ValidationError as err:
-        raise web.HTTPBadRequest(text=json.dumps(err.messages))
+        raise web.HTTPBadRequest(text=err.json())
 
-    resource: dict = valid_payload["document"]
-    if not resource:
+    if not document:
         raise web.HTTPBadRequest(text="Missing document body")
 
-    dataset_id = valid_payload["dataset_id"]
-    resource_id = valid_payload["resource_id"]
-
     await Resource.insert(
-        dataset_id=dataset_id,
-        resource_id=resource_id,
-        url=resource["url"],
+        dataset_id=resource.dataset_id,
+        resource_id=str(resource.resource_id),
+        url=document.url,
         priority=True,
     )
 
@@ -59,18 +56,15 @@ async def update_resource_legacy(request: web.Request) -> web.Response:
     """
     try:
         payload = await request.json()
-        valid_payload: dict = ResourceSchema().load(payload)
+        resource = ResourceSchema.model_validate(payload)
+        document = ResourceDocumentSchema.model_validate(resource.document)
     except ValidationError as err:
-        raise web.HTTPBadRequest(text=json.dumps(err.messages))
+        raise web.HTTPBadRequest(text=err.json())
 
-    resource: dict = valid_payload["document"]
-    if not resource:
+    if not document:
         raise web.HTTPBadRequest(text="Missing document body")
 
-    dataset_id: str = valid_payload["dataset_id"]
-    resource_id: str = valid_payload["resource_id"]
-
-    await Resource.update_or_insert(dataset_id, resource_id, resource["url"])
+    await Resource.update_or_insert(resource.dataset_id, str(resource.resource_id), document.url)
 
     return web.json_response({"message": "updated"})
 
@@ -78,16 +72,14 @@ async def update_resource_legacy(request: web.Request) -> web.Response:
 async def delete_resource_legacy(request: web.Request) -> web.Response:
     try:
         payload = await request.json()
-        valid_payload: dict = ResourceSchema().load(payload)
+        resource = ResourceSchema.model_validate(payload)
     except ValidationError as err:
-        raise web.HTTPBadRequest(text=json.dumps(err.messages))
-
-    resource_id: str = valid_payload["resource_id"]
+        raise web.HTTPBadRequest(text=err.json())
 
     pool = request.app["pool"]
     async with pool.acquire() as connection:
         # Mark resource as deleted in catalog table
-        q = f"""UPDATE catalog SET deleted = TRUE WHERE resource_id = '{resource_id}';"""
+        q = f"""UPDATE catalog SET deleted = TRUE WHERE resource_id = '{str(resource.resource_id)}';"""
         await connection.execute(q)
 
     return web.json_response({"message": "deleted"})
