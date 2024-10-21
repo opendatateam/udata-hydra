@@ -1,4 +1,3 @@
-import json
 from datetime import date
 
 import aiohttp
@@ -30,11 +29,11 @@ async def get_latest_check(request: web.Request) -> web.Response:
 
 async def get_all_checks(request: web.Request) -> web.Response:
     url, resource_id = get_request_params(request, params_names=["url", "resource_id"])
-    data: list | None = await Check.get_all(url, resource_id)
-    if not data:
+    records: list[Record] | None = await Check.get_all(url, resource_id)
+    if not records:
         raise web.HTTPNotFound()
 
-    return web.json_response([CheckSchema.model_validate(r) for r in data])
+    return web.json_response([CheckSchema.model_validate(r) for r in records])
 
 
 async def get_checks_aggregate(request: web.Request) -> web.Response:
@@ -52,11 +51,11 @@ async def get_checks_aggregate(request: web.Request) -> web.Response:
     column: str = request.query.get("group_by")
     if not column:
         raise web.HTTPBadRequest(text="Missing mandatory 'group_by' param.")
-    data: list | None = await Check.get_group_by_for_date(column, created_at_date)
-    if not data:
+    records: list[Record] | None = await Check.get_group_by_for_date(column, created_at_date)
+    if not records:
         raise web.HTTPNotFound()
 
-    return web.json_response([CheckSchema.model_validate(r) for r in data])
+    return web.json_response([CheckSchema.model_validate(r) for r in records])
 
 
 async def create_check(request: web.Request) -> web.Response:
@@ -73,8 +72,8 @@ async def create_check(request: web.Request) -> web.Response:
 
     # Get URL from resource_id
     try:
-        resource: Record | None = await Resource.get(resource_id, "url")
-        url: str = resource["url"]
+        record: Record | None = await Resource.get(resource_id, "url")
+        url: str = resource.url
     except Exception:
         raise web.HTTPNotFound(text=f"Couldn't find URL for resource {resource_id}")
 

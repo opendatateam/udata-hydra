@@ -67,27 +67,22 @@ async def create_resource(request: web.Request) -> web.Response:
     """
     try:
         payload = await request.json()
-        valid_payload = ResourceSchema.model_validate(payload)
+        resource = ResourceSchema.model_validate(payload)
+        document = ResourceDocumentSchema.model_validate(resource.document)
     except ValidationError as err:
         raise web.HTTPBadRequest(text=err.json())
 
-    document = valid_payload.document
     if not document:
         raise web.HTTPBadRequest(text="Missing document body")
 
-    dataset_id: str = str(valid_payload.dataset_id)
-    resource_id: str = str(valid_payload.resource_id)
-
     await Resource.insert(
-        dataset_id=dataset_id,
-        resource_id=str(resource_id),
+        dataset_id=resource.dataset_id,
+        resource_id=str(resource.resource_id),
         url=document.url,
         priority=True,
     )
 
-    return web.json_response(
-        text=json.dumps(document, default=str), content_type="application/json"
-    )
+    return web.json_response(document.model_dump())
 
 
 async def update_resource(request: web.Request) -> web.Response:
@@ -99,37 +94,31 @@ async def update_resource(request: web.Request) -> web.Response:
 
     try:
         payload = await request.json()
-        valid_payload = ResourceSchema.model_validate(payload)
+        resource = ResourceSchema.model_validate(payload)
+        document = ResourceDocumentSchema.model_validate(resource.document)
     except ValidationError as err:
         raise web.HTTPBadRequest(text=err.json())
 
-    document = valid_payload.document
     if not document:
         raise web.HTTPBadRequest(text="Missing document body")
 
-    dataset_id: str = str(valid_payload.dataset_id)
-    resource_id: str = str(valid_payload.resource_id)
+    await Resource.update_or_insert(resource.dataset_id, str(resource.resource_id), document.url)
 
-    await Resource.update_or_insert(dataset_id, resource_id, document.url)
-
-    return web.json_response(
-        text=json.dumps(document, default=str), status=200, content_type="application/json"
-    )
+    return web.json_response(document.model_dump())
 
 
 async def delete_resource(request: web.Request) -> web.Response:
     try:
         payload = await request.json()
-        valid_payload = ResourceSchema.model_validate(payload)
+        resource = ResourceSchema.model_validate(payload)
     except ValidationError as err:
         raise web.HTTPBadRequest(text=err.json())
 
-    resource_id: str = str(valid_payload.resource_id)
-    resource: Record | None = await Resource.get(resource_id=resource_id)
-    if not resource:
+    record: Record | None = await Resource.get(resource_id=str(resource.resource_id))
+    if not record:
         raise web.HTTPNotFound()
 
     # Mark resource as deleted in catalog table
-    await Resource.delete(resource_id=resource_id)
+    await Resource.delete(resource_id=str(resource.resource_id))
 
     return web.HTTPNoContent()
