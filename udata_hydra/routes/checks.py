@@ -1,3 +1,4 @@
+import json
 from datetime import date
 
 import aiohttp
@@ -22,7 +23,7 @@ async def get_latest_check(request: web.Request) -> web.Response:
     if record["deleted"]:
         raise web.HTTPGone()
 
-    check = CheckSchema.model_validate(record)
+    check = CheckSchema.model_validate(dict(record))
 
     return web.json_response(text=check.model_dump_json())
 
@@ -33,7 +34,7 @@ async def get_all_checks(request: web.Request) -> web.Response:
     if not records:
         raise web.HTTPNotFound()
 
-    return web.json_response([CheckSchema.model_validate(r) for r in records])
+    return web.json_response(json.dumps([CheckSchema.model_validate(dict(r)) for r in records]))
 
 
 async def get_checks_aggregate(request: web.Request) -> web.Response:
@@ -55,7 +56,7 @@ async def get_checks_aggregate(request: web.Request) -> web.Response:
     if not records:
         raise web.HTTPNotFound()
 
-    return web.json_response([CheckSchema.model_validate(r) for r in records])
+    return web.json_response([CheckSchema.model_validate(r).model_dump_json() for r in records])
 
 
 async def create_check(request: web.Request) -> web.Response:
