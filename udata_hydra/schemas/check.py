@@ -23,6 +23,8 @@ class CheckSchema(BaseModel):
     parsing_finished_at: Optional[datetime.datetime] = None
     parsing_error: str | None = None
     parsing_table: str | None = None
+    parquet_url: str | None = None
+    parquet_size: int | None = None
 
     @field_validator("headers", mode="before")
     @classmethod
