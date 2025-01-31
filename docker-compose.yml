@@ -1,4 +1,15 @@
 services:
+  app:
+    build: .
+    depends_on:
+      - database
+      - database-csv
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@database:5432/postgres
+      - DATABASE_URL_CSV=postgresql://postgres:postgres@database-csv:5432/postgres
+    volumes:
+      - .:/app
+
   database:
     image: "postgres:15"
     environment:
