@@ -26,7 +26,10 @@ jobs:
       - checkout
       - run:
           name: Install system dependencies
-          command: apt-get update -qq && apt-get install -y cmake
+          command: |
+            apt-get update -qq && apt-get install -y \
+              cmake \
+              libgeos-dev  # Added for shapely dependency
       - run:
           name: Get the base reference branch
           command: export BASE_BRANCH=$(base_branch)
