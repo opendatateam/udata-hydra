@@ -2,7 +2,7 @@
 
 ## Current (in progress)
 
-- Nothing yet
+- Add a CI job to create a release on Sentry [#246](https://github.com/datagouv/hydra/pull/246)
 
 ## 2.1.0 (2025-01-13)
 
